@@ -1,0 +1,1475 @@
+---
+title: "Exchange_Campaign 1"
+author: "Alan Roebuck"
+date: "08/07/2024"
+output: html_document
+---
+
+## *Load Libraries*
+```{r Load Libraries}
+require(pacman)
+pacman::p_load(cowsay,
+               tidyverse,
+               googlesheets4, # read_sheet 
+               googledrive, # drive_upload
+               ggplot2,
+               vegan,
+               ggvegan,
+               ggrepel,
+               dplyr,
+               vegan,
+               ggrepel,
+               VennDiagram,
+               outliers,
+               gridExtra,
+               sf,
+               ggVennDiagram,
+               scales,
+               Hmisc,
+               corrplot,
+               car,
+               outliers,
+               biotools,
+               MASS,
+               ragg,
+               magick
+)
+
+```
+
+## *Data Preparation*
+
+```{r Read in Metadata}
+
+# This section reads in metadata and isolates the water data only. 
+# Samples are then defined based on their water types as "Riverine" or "Estuarine"
+
+metadata <- read.csv("Data/ec1_metadata_collectionlevel.csv", header=TRUE, sep=",")
+metadata <- metadata %>%
+  dplyr::filter(transect_location %in% c("water")) %>%
+  dplyr::filter(!kit_id %in% c("K007")) %>% # Removes from metadata, there is no actual data for this site
+  mutate(system = if_else(longitude < -78, "Great Lakes", 
+                          if_else(longitude > -75.55 & latitude > 38.5, "Delaware Bay", "Chesapeake Bay")),
+         region = if_else(system == "Great Lakes", "Great Lakes", "Mid-Atlantic"),
+         region = factor(region, levels = c("Mid-Atlantic","Great Lakes")),
+         systemtype = case_when(kit_id %in% c('K001','K033') ~ 'Lacustuary',
+                                kit_id %in% c('K012', 'K034','K051','K052','K053') ~ 'Tidal Stream',
+                                kit_id %in% c('K017','K037') ~ 'Tidal River',
+                                kit_id %in% c('K057','K059') ~ 'Open Water',
+                                TRUE ~ systemtype),
+         water_type = case_when(systemtype == 'Tidal Stream' ~ 'Riverine',
+                                    systemtype == 'Tidal stream' ~ 'Riverine',
+                                    systemtype == 'Lacestuary'~'Estuarine',
+                                    systemtype == 'Lacustuary'~'Estuarine',
+                                    systemtype == 'Tidal River' ~'Riverine',
+                                    systemtype == 'Open Water' ~ 'Estuarine',
+                                    systemtype == 'Estuary' ~ 'Estuarine',
+                                    systemtype == 'Lake' ~ 'Estuarine',
+                                    systemtype == 'Open Water' ~ 'Estuarine',
+                                    TRUE ~ systemtype),
+         water_type = factor(water_type, levels = c("Riverine","Estuarine")))
+
+```
+
+```{r Read in water quality data}
+
+# Read in Water Quality Data
+file_paths <- list(
+  doc = "Data/ec1_water_doc_L2.csv",
+  alkalinity = "Data/ec1_water_alkalinity_L2.csv",
+  orp = "Data/ec1_water_orp_L2.csv",
+  pH = "Data/ec1_water_ph_L2.csv",
+  salinity = "Data/ec1_water_salinity_L2.csv",
+  tdn = "Data/ec1_water_tdn_L2.csv",
+  tss = "Data/ec1_water_tss_L2.csv"
+)
+
+data_list <- lapply(file_paths, function(file) {
+  read.csv(file, header = TRUE, sep = ",")[, c(2, 4)]
+})
+
+names(data_list) <- names(file_paths)
+
+# Merge Water Quality Data
+data <- Reduce(function(x, y) merge(x, y, by = "kit_id", all = TRUE), data_list)
+
+rm(data_list, file_paths)
+
+```
+
+```{r Read in Optical Data, message=FALSE}
+
+spectral_indices <- read.csv("Data/EC1_Water_CDOM_SpectralIndices_20221110.csv", header = TRUE, sep = ",")
+peak_picks <- read.csv("Data/EC1_Water_CDOM_DOCnormalizedpeakpicks_20221110.csv", header = TRUE, sep = ",")
+parafac <- readxl::read_excel("Data/EC1_Water_CDOM_PARAFAC_L2_20221107.xls", sheet = "Model5FmaxProjected")
+
+# Process parafac data
+colnames(parafac) <- parafac[1, ]
+parafac <- parafac[-1, ] %>%
+  rename(kit_id = i) %>%
+  mutate(across(starts_with("Fmax"), as.numeric)) %>%
+  rowwise() %>%
+  mutate(
+    Ftotal = sum(c_across(starts_with("Fmax"))),
+    PercC1 = Fmax1 * 100 / Ftotal,
+    PercC2 = Fmax2 * 100 / Ftotal,
+    PercC3 = Fmax3 * 100 / Ftotal,
+    PercC4 = Fmax4 * 100 / Ftotal,
+    PercC5 = Fmax5 * 100 / Ftotal
+  ) %>%
+  ungroup()
+
+# Rename and dplyr::select necessary columns from peak picks and spectral indices
+peak_picks <- peak_picks %>% rename(kit_id = Sample_ID)
+spectral_indices <- spectral_indices %>%
+  rename(kit_id = Sample_ID) %>%
+  dplyr::select(-Sample_Description)
+
+
+#Merge All Data
+data_final <- list(data, spectral_indices, parafac, metadata) %>%
+  reduce(function(x, y) merge(x, y, by = "kit_id", all = TRUE)) %>%
+  dplyr::select(kit_id, latitude, longitude,system, region, water_type, doc_mgC_L:SUVA254, Sr, FI:BIX, PercC1:PercC5) %>%
+  drop_na()
+
+rm(data, metadata, parafac, peak_picks, spectral_indices)
+
+```
+
+```{r Read in FTICR-MS data}
+#Read in FTICR data
+ft_mol <- read.csv("Data/EC1_Water_FTICR_meta_L2_20221221.csv", header=TRUE, sep=",")
+ft_data <- read.csv("Data/EC1_Water_FTICR_L2_20221221.csv", header=TRUE, sep=",")
+
+# Merge FTICR data
+ft_all <- merge(x=ft_mol, y=ft_data, by="formula")%>%
+  dplyr::select(Mass, everything())
+
+# Resplit FTICR data
+ft_mol <- ft_all %>%
+  dplyr::select(Mass:DBE_C)%>%
+  mutate(AImod = ifelse(AImod == '-Inf',0,AImod))%>% #remove AImod values with Infinity value
+  mutate(Elem_Form = paste0( #Add new Elemental Formula column with (CHO, CHON, CHOS, CHOP, CHONS, CHOSP, CHONSP)
+    "CHO",
+    ifelse(N > 0, "N", ""),
+    ifelse(S > 0, "S", ""),
+    ifelse(P > 0, "P", "")))%>%
+  dplyr::select(Mass:P, Elem_Form, everything())
+
+ft_data <- ft_all %>%
+  dplyr::select(starts_with("K")) %>%
+  rename_with(~gsub("b","",.))
+
+#Set row names and drop rows without identified peaks
+row.names(ft_data) <- ft_mol$Mass
+ft_mol = ft_mol[-which(rowSums(ft_data) == 0),] #drop rows that do not have any identified peaks
+ft_data = ft_data[-which(rowSums(ft_data) == 0),] #drop rows that do not have any identified peaks
+
+rm(ft_all)
+
+
+
+```
+
+```{r FTICRMS Molecular Properties, message=FALSE, warning=FALSE}
+
+# Define a function to calculate weighted means
+calculate_weighted_means <- function(column, weights) {
+  sum(column * weights) / sum(weights)
+}
+
+# Create dataframe with mean FTICRMS molecular properties data
+fticr_weighted_means <- ft_data %>%
+  summarise(
+    Mass = apply(ft_data, 2, function(x) calculate_weighted_means(ft_mol$Mass, x)),
+    C = apply(ft_data, 2, function(x) calculate_weighted_means(ft_mol$C, x)),
+    H = apply(ft_data, 2, function(x) calculate_weighted_means(ft_mol$H, x)),
+    O = apply(ft_data, 2, function(x) calculate_weighted_means(ft_mol$O, x)),
+    N = apply(ft_data, 2, function(x) calculate_weighted_means(ft_mol$N, x)),
+    S = apply(ft_data, 2, function(x) calculate_weighted_means(ft_mol$S, x)),
+    AImod = apply(ft_data, 2, function(x) calculate_weighted_means(ft_mol$AImod, x)),
+    DBE = apply(ft_data, 2, function(x) calculate_weighted_means(ft_mol$DBE, x)),
+    NOSC = apply(ft_data, 2, function(x) calculate_weighted_means(ft_mol$NOSC, x)),
+    OC = apply(ft_data, 2, function(x) calculate_weighted_means(ft_mol$OC, x)),
+    HC = apply(ft_data, 2, function(x) calculate_weighted_means(ft_mol$HC, x)),
+    CHO = apply(ft_data, 2, function(x) sum(x[ft_mol$Elem_Form == 'CHO'] !=0)*100/sum(x != 0)),
+    CHON = apply(ft_data, 2, function(x) sum(x[ft_mol$Elem_Form == 'CHON'] !=0)*100/sum(x != 0)),
+    CHOS = apply(ft_data, 2, function(x) sum(x[ft_mol$Elem_Form == 'CHOS'] !=0)*100/sum(x != 0)),
+    aliphatic = apply(ft_data, 2, function(x) sum(x[ft_mol$Class_detailed == 'aliphatic']) / sum(x)),
+    aliphatic_N = apply(ft_data, 2, function(x) sum(x[ft_mol$Class_detailed == 'aliphatic+N']) / sum(x)),
+    aromatic = apply(ft_data, 2, function(x) sum(x[ft_mol$Class_detailed == 'aromatic']) / sum(x)),
+    carbohydrate = apply(ft_data, 2, function(x) sum(x[ft_mol$Class_detailed == 'carbohydrate']) / sum(x)),
+    condensed_aromatic = apply(ft_data, 2, function(x) sum(x[ft_mol$Class_detailed == 'condensed aromatic']) / sum(x)),
+    lipid = apply(ft_data, 2, function(x) sum(x[ft_mol$Class_detailed == 'lipid']) / sum(x)),
+    unsaturated_lignin = apply(ft_data, 2, function(x) sum(x[ft_mol$Class_detailed == 'unsaturated/lignin']) / sum(x))
+  )%>%
+  mutate(kit_id = colnames(ft_data))%>%
+  dplyr::select(kit_id, everything())
+
+# Merge FTICR data with larger data frame
+data_final <- data_final %>%
+  left_join(fticr_weighted_means, by="kit_id")%>%
+  drop_na()
+
+# Clean up workspace
+rm(calculate_weighted_means, fticr_weighted_means)
+
+```
+
+## *Question 1 & 2 Analyses*
+
+### **Quartiles and Outliers Function**
+
+```{r Quartile and Outliers function}
+
+# This function will specify the extreme outliers and the quartile bounds for any analyte specified.
+
+calculate_quantiles_thresholds <- function(df, column) {
+  Q1 <- quantile(df[[column]], probs = 0.25, na.rm = TRUE)
+  Q3 <- quantile(df[[column]], probs = 0.75, na.rm = TRUE)
+  
+  extreme_min_threshold <- Q1 - ((Q3 - Q1) * 3)
+  extreme_max_threshold <- Q3 + ((Q3 - Q1) * 3)
+  
+  return(list(Q1 = Q1, Q3 = Q3, extreme_min_threshold = extreme_min_threshold, extreme_max_threshold = extreme_max_threshold))
+}
+
+```
+
+### **Regional/Spatial Variation in DOC and SUVA**
+```{r ANOVA for DOC, warning=FALSE}
+
+### Identify extreme outliers 
+
+calculate_quantiles_thresholds(data_final, 'doc_mgC_L')
+#For DOC analyses, outliers > 17.01 mgC/L will be removed from the analysis 
+
+
+### Two Way Analysis of Variance to determine impact of region and system type on DOC concentration ###
+
+# First Model Using Anova with Type II Sum of Squares Method #
+aov.doc <- aov(doc_mgC_L~water_type*region, data=subset(data_final, doc_mgC_L < 17))
+
+# Plot and assess Residuals 
+qqnorm(aov.doc$residuals, pch=20,
+       cex.lab=1, cex.axis=0.7, cex.main=1)
+qqline(aov.doc$residuals)
+plot(aov.doc, 1)
+
+#Shapiro Test to determine normality of residuals
+shapiro.test(aov.doc$residuals) 
+
+# Run anova statistics using type II sum of squares
+Anova(aov.doc, type='II')
+
+# Post hoc analysis
+TukeyHSD(aov.doc)
+
+# Get mean and sd for DOC across water type for each region
+data_final %>%
+  dplyr::filter(doc_mgC_L < 17.01)%>%
+  group_by(region, water_type)%>%
+  summarise(doc_mean = mean(doc_mgC_L),
+            doc_sd = sd(doc_mgC_L))
+
+
+rm(thresholds, aov.doc, means_doc)
+
+```
+
+```{r Anova for SUVA254}
+### Identify extreme outliers 
+
+calculate_quantiles_thresholds(data_final, 'SUVA254')
+#For SUVA analyses, outliers > 6.23 will be removed from the analysis 
+
+
+### Two Way Analysis of Variance to determine impact of region and system type on SUVA254 ###
+
+# First Model Using Anova with Type III Sum of Squares Method #
+aov.suva <- aov(SUVA254~water_type*region, data=subset(data_final, SUVA254 < 6.23))
+
+# Plot and assess Residuals 
+qqnorm(aov.suva$residuals, pch=20,
+       cex.lab=1, cex.axis=0.7, cex.main=1)
+qqline(aov.suva$residuals)
+plot(aov.suva, 1)
+
+#Shapiro Test to determine normality of residuals
+shapiro.test(aov.suva$residuals) 
+#Residual analysis confirms a normal distribution of residuals (p = 0.3437)
+
+# Run anova statistics using type II sum of squares
+Anova(aov.suva, type='II')
+
+# Posthoc analysis
+TukeyHSD(aov.suva)
+# Riverine samples significantly higher the estuarine samples
+
+# Get mean and standard deviation of SUVA254 across water types for each region
+data_final %>%
+  dplyr::filter(SUVA254 < 6.23)%>%
+  group_by(region, water_type)%>%
+  summarise(doc_mean = mean(SUVA254),
+            doc_sd = sd(SUVA254))
+
+rm(aov.suva)
+
+```
+
+```{r Figure 2 DOC and SUVA, fig.width=4, fig.height=6}
+
+region_colors <- c("Mid-Atlantic"="#D84315","Great Lakes"="#0D47A1")
+
+
+facet_plot <- function(data,x,y) {
+  ggplot(data=data, aes(x={{x}}, y={{y}}, fill = region))+
+    geom_boxplot(width=0.4)+
+    facet_wrap(~region, nrow = 1)+
+    scale_fill_manual(values=region_colors)+
+    scale_colour_manual(values=region_colors)+
+    labs(x="", y=ylab)+
+    theme_bw()+
+    theme(axis.title.y=element_text(size=14, margin=margin(0,7,0,0)),
+        axis.text=element_text(size=14),
+        axis.text.x=element_text(angle=15, margin=margin(0,0,0,0), hjust=1),
+        legend.position="none",
+        strip.text = element_text(size = 14, color= "black"),
+        plot.tag.position=c(0.95,0.04),
+        plot.tag = element_text(size=20))
+}
+
+facet_plot_v2 <- function(data,x,y) {
+  ggplot(data=data, aes(x={{x}}, y={{y}}, fill = region))+
+    geom_boxplot(width=0.4)+
+    facet_wrap(~region, nrow = 1)+
+    scale_fill_manual(values=region_colors)+
+    scale_colour_manual(values=region_colors)+
+    labs(x="", y=ylab)+
+    theme_bw()+
+    theme(axis.title.y=element_text(size=14, margin=margin(0,7,0,0)),
+        axis.text=element_text(size=14),
+        axis.text.x=element_blank(),
+        legend.position="none",
+        strip.text = element_text(size = 14, color= "black"),
+        plot.tag.position=c(0.95,0.04),
+        plot.tag = element_text(size=20))
+}
+
+#Graph DOC as a function of region and surface water type (removing outliers)
+ylab="DOC (mg/L)"
+doc <- facet_plot_v2(subset(data_final, doc_mgC_L < 17.01), water_type,doc_mgC_L)
+
+
+#Graph SUVA254 as a function of regin and surface water type (removing outliers)
+ylab=bquote("SUVA "[254])
+suva <- facet_plot(subset(data_final, SUVA254<6.23), water_type,SUVA254)
+
+
+
+#Combine plots
+water_chem_plots <- egg::ggarrange(doc,suva, ncol=1, heights=c(3,3),widths=c(4), 
+                                   labels=c("A","B"),
+                                   label.args = list(gp=grid::gpar(font=1, fontsize=24), x=unit(0.10,"in"), hjust=0, vjust=2.0))
+
+# Save plot
+ragg::agg_png("Figures/Fig_2_Water_Chem_Plots.png", width=3.25, height=4.875, units="in", res = 300, scaling=0.8)
+print(water_chem_plots)
+dev.off()
+
+
+rm(doc, suva, water_chem_plots, ylab)
+
+```
+
+
+### **Regional/Spatial Variation in in Fluorescence Components**
+
+```{r PCA of fluorescence Components}
+
+pca <- data_final%>%
+  dplyr::select(PercC1:PercC5)%>%
+  prcomp(., center=TRUE, scale=TRUE)
+
+#Get eigen values and vectors
+eigval <- pca$sdev^2
+eigvec <- data.frame(pca$rotation)
+
+#Calculate loadings
+pca.loadings <- eigvec %>%
+  mutate(loadings1 = PC1*sqrt(eigval[1]),
+         loadings2 = PC2*sqrt(eigval[2]))%>%
+  dplyr::select(loadings1, loadings2)%>%
+  rename(PC1 = loadings1, PC2 = loadings2)
+
+#Set rownames
+rownames(pca.loadings)<- c('%C1','%C2','%C3','%C4','%C5')
+
+# Create pca.scores dataframe and set row names
+pca.scores <- as.data.frame(pca$x)
+rownames(pca.scores) <- data_final$kit_id
+
+# Calculate percentage variance explained by each principal component
+percentage <- round(eigval / sum(eigval) * 100, 1)
+percentage <- paste0(colnames(pca.scores), " (", percentage, "%)")
+
+rm(eigval, eigvec, pca)
+```
+
+```{r Figure 4 PCA plot, fig.height = 3.75, fig.width=3.25}
+
+xscale <- 5.5
+yscale <- 5.5
+
+pca.plot <- ggplot()+
+  geom_abline(intercept=0, slope=0, linetype="dashed", linewidth=0.8, colour="gray")+
+  geom_vline(aes(xintercept=0), linetype="dashed", linewidth=0.8, colour="gray")+
+  geom_point(data=pca.scores,mapping=aes(x=PC1, y=PC2,colour=data_final$region, shape=data_final$water_type,), size=2)+
+  scale_colour_manual(values=c("Mid-Atlantic"="#D84315",
+                               "Great Lakes"="#0D47A1"))+
+  scale_shape_manual(values=c("Estuarine"= 1,
+                              "Riverine"=16))+
+  geom_segment(data=pca.loadings,
+               mapping=aes(x=0, y=0, xend=PC1*xscale*0.95, yend=PC2*yscale*0.95),
+               arrow=arrow(length=unit(0.015, "npc"),
+                           type="closed"),
+               colour="grey",
+               linewidth=0.8,
+               alpha=0.5)+
+  stat_ellipse(data=pca.scores,
+               mapping = aes(x=PC1,y=PC2, linetype=data_final$water_type), type="t")+
+  guides(color=guide_legend(order=1,nrow=2, byrow=TRUE),
+         shape=guide_legend(order=2,nrow=2, byrow=TRUE),
+         linetype="none")+
+  labs(colour="")+
+  theme_light()+
+  theme(panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        panel.background=element_blank(),
+        axis.title=element_text(size=12),
+        axis.text=element_text(size=12),
+        legend.title=element_blank(),
+        legend.text=element_text(size=10),
+        legend.position="bottom",
+        legend.box.margin = margin(t=-5, l=-30),
+        legend.margin = margin(t=0.1),
+        legend.key.size = unit(0, unit= 'lines'))+
+  xlab(percentage[1])+ylab(percentage[2])+
+  xlim(-xscale,xscale)+ylim(-yscale,xscale)+
+  geom_text(data=pca.loadings,
+            mapping=aes(label=row.names(pca.loadings), x=PC1*xscale*1.05, y=PC2*yscale*1.05), size=12/.pt, colour="grey")
+
+
+# Print Figure
+ragg::agg_png("Figures/Fig_4_PCA_Plots.png", width=3.25, height=3.75, units="in", res = 300, scaling=1)
+print(pca.plot)
+dev.off()
+
+rm(pca.loadings, pca.plot, pca.scores, percentage, xscale, yscale)
+```
+
+```{r MANOVA for Fluorescence Data}
+
+# Because the PARAFAC components sum equally to 100, you have perfect collinearity among dependent variables generating a rank deficiency. To avoid, we must leave one of the PARAFAC components out.
+
+# Multivariate analysis of Variance for Fluorescence Components
+manova.parafac <- manova(cbind(PercC1,PercC2,PercC3,PercC4)~region+water_type, data=data_final)
+Manova(manova.parafac, type='II')
+
+
+# Post hoc analysis
+mvpaircomp(manova.parafac, "water_type", test="Wilks", adjust="bonferroni")
+
+
+
+rm(manova.parafac)
+```
+
+
+### **Regional/Spatial Variation in Molecular Composition (FTICR-MS)**
+
+```{r NMDS of FTICR-MS data}
+
+# Set up new dataframes to isolate peaks across regions
+ft_data_t <- t(ft_data) %>% as.data.frame() %>%
+  rownames_to_column(var="kit_id")
+
+ft_data_2 <- data_final %>%
+  dplyr::select(kit_id)%>%
+  left_join(ft_data_t, by="kit_id") %>%
+  column_to_rownames(var="kit_id")
+
+
+#Note that K024, K030, and K046 pull abnormally substantial weight in NMDS. We consider these to be outliers. 
+ft_data_nmds <- ft_data_2 %>%
+  dplyr::filter(!data_final$kit_id %in% c("K024", "K030", "K046"))
+
+ft_data_nmds <- decostand(ft_data_nmds, method="hellinger")
+set.seed(1988)
+nmds <- metaMDS(ft_data_nmds, distance = "bray", autotransform = F, na.rm=TRUE) #autotransform=F since we transformed data in previous step
+nmds.fortify<- fortify(nmds)
+
+
+#Envirofit on FTICRMS and Environmental Data
+envfit_data <- data_final %>% dplyr::filter(!kit_id %in% c("K024","K030","K046")) %>% dplyr::select(kit_id, region, water_type, Mass:CHOS)
+
+# Fit environmental parameters as vectors within NMDS space
+envfit_results <- envfit(nmds, envfit_data %>% dplyr::select(Mass:CHOS), na.rm = TRUE, permutations = 999)
+
+# Extract vectors and p-values from envfit results
+envfit_vectors <- as.data.frame(vegan::scores(envfit_results, "vectors"))
+envfit_pvals <- envfit_results$vectors$pvals
+
+# Combine vectors and p-values into a single dataframe
+nmds_correlations <- envfit_vectors %>%
+  mutate(pval = envfit_pvals) %>%
+  dplyr::filter(pval <= 0.05) %>%
+  rownames_to_column("variable") %>%
+  column_to_rownames("variable")
+
+# Clean up workspace
+rm(envfit_results, envfit_pvals, envfit_vectors, ft_data_t, nmds)
+```
+
+```{r Permutation Analysis of Variance for FTICR-MS Data}
+set.seed(1988)
+dist <- vegdist(decostand(ft_data_nmds, method="hellinger"), method="bray")
+adonis2(dist~region+water_type, data=envfit_data, perumuations=999)
+
+# Posthoc to look at differences within region
+bd.region <- betadisper(dist, envfit_data$region)
+anova(bd.region)
+
+
+# Post hoc to look at differences within water type
+bd.watertype <- betadisper(dist, envfit_data$water_type)
+anova(bd.watertype)
+
+rm(dist, bd.region, bd.watertype, ft_data_nmds)
+```
+
+```{r Figure 5A NMDS Plot, fig.height= 3.75, fig.width=3.25}
+
+xscale <- 0.5
+yscale <- 0.5
+
+a <- ggplot()+
+  geom_abline(intercept=0, slope=0, linetype="dashed", linewidth=0.8, colour="gray")+
+  geom_vline(aes(xintercept=0), linetype="dashed", linewidth=0.8, colour="gray")+
+  geom_point(data=subset(nmds.fortify, score=="sites"),
+             mapping=aes(x=NMDS1, y=NMDS2, 
+                         colour=envfit_data$region,
+                         shape= envfit_data$water_type),
+             size=3)+
+  scale_colour_manual(values=region_colors)+
+  scale_shape_manual(values=c("Estuarine"= 1,
+                              "Riverine"=16))+
+  geom_segment(data=nmds_correlations,
+               mapping=aes(x=0, y=0,xend=NMDS1*xscale*0.95, yend=NMDS2*yscale*0.95),
+               arrow=arrow(length=unit(0.015, "npc"),
+                           type="closed"),
+               colour="darkgrey",
+               size=0.8,
+               alpha=0.5)+
+  geom_text_repel(data=nmds_correlations,
+                  mapping=aes(label=row.names(nmds_correlations), x=NMDS1*xscale*1.05, y=NMDS2*yscale*1.05), size=10/.pt)+
+  theme_light()+
+  theme(panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        panel.background=element_blank(),
+        axis.title=element_text(size=12),
+        axis.text=element_text(size=12),
+        legend.title=element_blank(),
+        legend.text=element_text(size=10),
+        legend.position="bottom",
+        legend.box.margin = margin(t=-5, l=-30),
+        legend.margin = margin(t=0.1),
+        legend.key.size = unit(0, unit= 'lines'))+
+  stat_ellipse(data=subset(nmds.fortify, score=='sites'),
+              mapping = aes(x=NMDS1,y=NMDS2, colour=envfit_data$region), type="t")+
+  guides(color=guide_legend(nrow=2, byrow=TRUE))+
+  guides(shape=guide_legend(nrow=2, byrow=TRUE))
+
+
+```
+
+```{r Figure 5B-C Elemental Formula by Region and Water Type, fig.height=3.75, fig.width=6.5}
+
+
+b <- ggplot(data=envfit_data, aes(x=water_type, y=CHO, fill=region))+
+  geom_boxplot( colour="black")+
+  facet_wrap(~region)+
+  scale_fill_manual(values=region_colors) + scale_colour_manual(values = region_colors)+
+  labs(x="", y="%CHO")+
+  theme_bw()+
+  theme(axis.title=element_text(size=10),
+        axis.text=element_text(size=10),
+        axis.text.x=element_blank(),
+        legend.position="none",
+        strip.text = element_text(size = 8, color= "black"))
+
+
+c <- ggplot(data=envfit_data, aes(x=water_type, y=CHON, fill=region))+
+  geom_boxplot( colour="black")+
+  facet_wrap(~region)+
+  scale_fill_manual(values=region_colors) + scale_colour_manual(values = region_colors)+
+  labs(x="", y="%CHON")+
+  theme_bw()+
+  theme(axis.title=element_text(size=10),
+        axis.text=element_text(size=10),
+        axis.text.x=element_blank(),
+        legend.position="none",
+        strip.text = element_text(size = 8, color= "black"))
+
+d <- ggplot(data=envfit_data, aes(x=water_type, y=CHOS, fill=region))+
+  geom_boxplot( colour="black")+
+  facet_wrap(~region)+
+  scale_fill_manual(values=region_colors) + scale_colour_manual(values = region_colors)+
+  labs(x="", y="%CHOS")+
+  theme_bw()+
+  theme(axis.title=element_text(size=10),
+        axis.text=element_text(size=10),
+        axis.text.x=element_text(hjust=0.5),
+        legend.position="none",
+        strip.text = element_text(size = 8, color= "black"))
+
+
+# Combine FTICR NMDS and Molecular Properties Plots
+fticr_plots <- ggpubr::ggarrange(a,
+               ggpubr::ggarrange(b,c,d, ncol=1, heights = c(1,1,1.1),
+                                 labels = c("B","C","D"),
+                                 font.label = list(size=16, face="plain"),
+                                 vjust = c(1.5,1,1)),
+               ncol=2,
+               labels = "A",
+               font.label = list(size=16, face="plain"))
+
+
+# Print Figure
+ragg::agg_png("Figures/Fig_5_FTICR_Plots.png", width=6.5, height=3.75, units="in", res = 300, scaling=1)
+print(fticr_plots)
+dev.off()
+
+# Clean Up Workspace
+rm(a,b,c,d,fticr_plots, nmds.fortify, nmds_correlations, xscale, yscale, envfit_data)
+
+```
+
+```{r ANOVA for %CHO Compounds}
+### Identify extreme outliers 
+
+calculate_quantiles_thresholds(data_final, 'CHO')
+#There are no extreme outliers for CHO 
+
+
+### Two Way Analysis of Variance to determine impact of region and system type on %CHO ###
+
+# First Model Using Anova with Type II Sum of Squares Method #
+aov.cho <- aov(CHO~water_type*region, data=subset(data_final, CHO < 33.5 | CHO >48.3))
+
+# Plot and assess Residuals 
+qqnorm(aov.cho$residuals, pch=20,
+       cex.lab=1, cex.axis=0.7, cex.main=1)
+qqline(aov.cho$residuals)
+plot(aov.cho, 1,)
+
+#Shapiro Test to determine normality of residuals
+shapiro.test(aov.cho$residuals) 
+#Residual analysis confirms a normal distribution of residuals (p = 0.303)
+
+# Run anova statistics using type II sum of squares
+Anova(aov.cho, type='II')
+
+rm(aov.cho)
+
+
+```
+
+```{r ANOVA for %CHON Compounds}
+### Identify extreme outliers 
+
+calculate_quantiles_thresholds(data_final, 'CHON')
+
+#There are no extreme outliers for CHON 
+
+
+### Two Way Analysis of Variance to determine impact of region and system type on %cHON ###
+
+# First Model Using Anova with Type II Sum of Squares Method #
+aov.chon <- aov(CHON~water_type*region, data=data_final)
+
+# Plot and assess Residuals 
+qqnorm(aov.chon$residuals, pch=20,
+       cex.lab=1, cex.axis=0.7, cex.main=1)
+qqline(aov.chon$residuals)
+plot(aov.chon, 1)
+
+#Shapiro Test to determine normality of residuals
+shapiro.test(aov.chon$residuals) 
+#Residual analysis confirms a normal distribution of residuals (p = 0.303)
+
+# Run anova statistics using type II sum of squares
+Anova(aov.chon, type='II')
+
+rm(aov.chon)
+
+
+```
+
+```{r ANOVA for %CHOS Compounds}
+### Identify extreme outliers 
+
+calculate_quantiles_thresholds(data_final, 'CHOS')
+#There are no extreme outliers for CHOS 
+
+
+### Two Way Analysis of Variance to determine impact of region and system type on %CHOS concentration ###
+
+# First Model Using Anova with Type II Sum of Squares Method #
+aov.CHOS <- aov(CHOS~water_type*region, data=data_final)
+
+# Plot and assess Residuals 
+qqnorm(aov.CHOS$residuals, pch=20,
+       cex.lab=1, cex.axis=0.7, cex.main=1)
+qqline(aov.CHOS$residuals)
+plot(aov.CHOS, 1)
+
+#Shapiro Test to determine normality of residuals
+shapiro.test(aov.CHOS$residuals) 
+#Residual analysis confirms a normal distribution of residuals (p = 0.2651)
+
+# Run anova statistics using type II sum of squares
+Anova(aov.CHOS, type='II')
+
+#Posthoc analysis
+TukeyHSD(aov.CHOS)
+
+rm(aov.CHOS)
+
+
+```
+
+
+## *Question 3 Analyses*
+
+```{r Correlation Maxtrix for Mid-Atlantic, fig.height=11, fig.width=8}
+
+
+corr_matrix <- data_final %>%
+  dplyr::filter(region=='Mid-Atlantic')%>%
+  dplyr::select(doc_mgC_L,SUVA254,PercC1:PercC5, CHO:CHOS, sal_psu, ph)%>%
+  mutate(doc_mgC_L = if_else(doc_mgC_L > 17.01, NA_real_, doc_mgC_L), #remove extreme outliers
+         SUVA254 = if_else(SUVA254 > 6.23, NA_real_, SUVA254))%>% #remove extreme outliers
+  as.matrix()%>%
+  rcorr(type="pearson")
+
+# Extract and Subset Correlation Matrices
+corr_matrix_r <- corr_matrix$r[1:10, -c(1:10)]
+corr_matrix_p <- corr_matrix$P[1:10, -c(1:10)]
+
+# Define column and row names
+col_names <- c('Salinity', 'pH')
+row_names <- c('DOC','SUVA254','%C1','%C2','%C3','%C4','%C5','CHO','CHON','CHOS')
+
+# Assign names to matrices
+colnames(corr_matrix_r) <- col_names
+rownames(corr_matrix_r) <- row_names
+colnames(corr_matrix_p) <- col_names
+rownames(corr_matrix_p) <- row_names
+
+# Print Figure
+ragg::agg_png("Fig_3_Corr_plot_A.png", width=2.5, height=6.5, units = "in", res=300, scaling=0.5)
+corrplot(corr_matrix_r, tl.col = "black", p.mat=corr_matrix_p, sig.level=0.05, insig="blank", method="number", col="black",
+         cl.pos='n', tl.cex=2, number.cex=2)
+text(-0.5, ncol(corr_matrix_r) + 9.0, "A", col="black", cex=4.5)
+dev.off()
+
+rm(corr_matrix, corr_matrix_p, corr_matrix_r)
+```
+
+```{r Correlation Maxtrix for Great Lakes, fig.height=11, fig.width=8}
+
+corr_matrix <- data_final %>%
+  dplyr::filter(region=='Great Lakes')%>%
+  dplyr::select(doc_mgC_L,SUVA254,PercC1:PercC5, CHO:CHOS, sal_psu, ph)%>%
+  mutate(doc_mgC_L = if_else(doc_mgC_L > 17.01, NA_real_, doc_mgC_L), #remove extreme outliers
+         SUVA254 = if_else(SUVA254 > 6.23, NA_real_, SUVA254))%>% #remove extreme outliers
+  as.matrix()%>%
+  rcorr(type="pearson")
+
+# Extract and Subset Correlation Matrices
+corr_matrix_r <- corr_matrix$r[1:10, -c(1:10)]
+corr_matrix_p <- corr_matrix$P[1:10, -c(1:10)]
+
+# Assign names to matrices
+colnames(corr_matrix_r) <- col_names
+rownames(corr_matrix_r) <- row_names
+colnames(corr_matrix_p) <- col_names
+rownames(corr_matrix_p) <- row_names
+
+# Print Figure
+ragg::agg_png("Fig_3_Corr_plot_B.png", width=2.5, height=6.5, units = "in", res=300, scaling=0.5)
+corrplot(corr_matrix_r, tl.col = "black", p.mat=corr_matrix_p, sig.level=0.05, insig="blank", method="number", col="black",
+         cl.pos='n', tl.cex=2, number.cex=2)
+text(-0.5, ncol(corr_matrix_r) + 9.0, "B", col="black", cex=4.5)
+dev.off()
+
+rm(corr_matrix, corr_matrix_p, corr_matrix_r, col_names, row_names)
+
+```
+
+```{r Figure 3 Combined Correlation Matrices}
+
+# Load in previous correlation plots
+image1 <- image_read("Fig_3_Corr_plot_A.png")
+image2 <- image_read("Fig_3_Corr_plot_B.png")
+
+# Combine correlation plots
+combined_image <- image_append(c(image1,image2)) #CB, GL, Whole Dataset
+
+# Write out new Figure of correlation plots
+image_write(combined_image, path="Figures/Fig_3_Corr_Plots.png")
+
+# Delete files
+file.remove(c("Fig_3_Corr_plot_A.png", "Fig_3_Corr_plot_B.png"))
+
+
+rm(combined_image, image1,image2)
+```
+
+```{r Various correlations used in Manuscript}
+
+# Correlation between DOC and SUVA
+data_final%>%
+  summarise(correlation = cor.test(doc_mgC_L, SUVA254, method="pearson")$estimate,
+            p_value = cor.test(doc_mgC_L, SUVA254, method="pearson")$p.value)%>%
+  print()
+
+# Correlation between DOC and pH in mid-Atlantic
+data_final%>%
+  dplyr::filter(region == 'Mid-Atlantic') %>%
+  mutate(doc_mgC_L = if_else(doc_mgC_L > 17.01, NA_real_, doc_mgC_L), #remove extreme outliers
+         SUVA254 = if_else(SUVA254 > 6.23, NA_real_, SUVA254))%>%
+  summarise(correlation = cor.test(doc_mgC_L, ph, method="pearson")$estimate,
+            p_value = cor.test(doc_mgC_L, ph, method="pearson")$p.value)%>%
+  print()
+
+# Correlation between DOC and pH in Great Lakes
+data_final%>%
+  dplyr::filter(region == 'Great Lakes') %>%
+  mutate(doc_mgC_L = if_else(doc_mgC_L > 17.01, NA_real_, doc_mgC_L), #remove extreme outliers
+         SUVA254 = if_else(SUVA254 > 6.23, NA_real_, SUVA254))%>%
+  summarise(correlation = cor.test(doc_mgC_L, ph, method="pearson")$estimate,
+            p_value = cor.test(doc_mgC_L, ph, method="pearson")$p.value)%>%
+  print()
+
+
+# Correlation between DOC and pH in mid-Atlantic
+data_final%>%
+  mutate(doc_mgC_L = if_else(doc_mgC_L > 17.01, NA_real_, doc_mgC_L), #remove extreme outliers
+         SUVA254 = if_else(SUVA254 > 6.23, NA_real_, SUVA254))%>%
+  summarise(correlation = cor.test(doc_mgC_L, ph, method="pearson")$estimate,
+            p_value = cor.test(doc_mgC_L, ph, method="pearson")$p.value)%>%
+  print()
+
+# Correlation between DOC and Salinity
+data_final%>%
+  dplyr::filter(region == 'Mid-Atlantic') %>%
+  dplyr::filter(sal_psu < 20) %>%
+  summarise(correlation = cor.test(doc_mgC_L, sal_psu, method="pearson")$estimate,
+            p_value = cor.test(doc_mgC_L, sal_psu, method="pearson")$p.value)%>%
+  print()
+
+# Correlation between SUVA and pH without SUVA outlier
+data_final%>%
+  dplyr::filter(SUVA254 < 6.23)%>%
+  summarise(correlation = cor.test(ph, SUVA254, method="pearson")$estimate,
+            p_value = cor.test(ph, SUVA254, method="pearson")$p.value)%>%
+  print()
+
+# Correlation between SUVA and pH in Mid Atlantic without SUVA outlier
+data_final%>%
+  dplyr::filter(region == "Mid-Atlantic" & SUVA254 < 6.23) %>%
+  summarise(correlation = cor.test(ph, SUVA254, method="pearson")$estimate,
+            p_value = cor.test(ph, SUVA254, method="pearson")$p.value)%>%
+  print()
+
+# Correlation between SUVA and pH in Great Lakes
+data_final%>%
+  dplyr::filter(region == "Great Lakes") %>%
+  summarise(correlation = cor.test(ph, SUVA254, method="pearson")$estimate,
+            p_value = cor.test(ph, SUVA254, method="pearson")$p.value)%>%
+  print()
+
+
+# Correlation between C2 and pH in Mid Atlantic
+data_final%>%
+  dplyr::filter(region == "Mid-Atlantic") %>%
+  summarise(correlation = cor.test(ph, PercC2, method="pearson")$estimate,
+            p_value = cor.test(ph, PercC2, method="pearson")$p.value)%>%
+  print()
+
+# Correlation between C4 and pH in Mid Atlantic
+data_final%>%
+  dplyr::filter(region == "Mid-Atlantic") %>%
+  summarise(correlation = cor.test(ph, PercC4, method="pearson")$estimate,
+            p_value = cor.test(ph, PercC4, method="pearson")$p.value)%>%
+  print()
+
+# Correlation between C5 and pH in Mid Atlantic
+data_final%>%
+  dplyr::filter(region == "Mid-Atlantic") %>%
+  summarise(correlation = cor.test(ph, PercC5, method="pearson")$estimate,
+            p_value = cor.test(ph, PercC5, method="pearson")$p.value)%>%
+  print()
+
+```
+
+
+
+## *Supporting Information*
+
+```{r Base Graphs}
+#Note, settings for facet plot are set up to accommodate 2 columns by 3 rows (e.g., roughly 3.25 inches wide, 3 inches height per graph). If you decide to an extra row, will need to use scaling function in ragg::agg_png to appropriately scale the graphs
+
+# plot for graphs that will appear on bottom row
+facet_plot_s1 <- function(data,x,y) {
+  ggplot(data=data, aes(x={{x}}, y={{y}}, fill = region))+
+    geom_boxplot(width=0.4)+
+    facet_wrap(~region, nrow = 1)+
+    scale_fill_manual(values=region_colors)+
+    scale_colour_manual(values=region_colors)+
+    labs(x="", y=ylab)+
+    theme_bw()+
+    theme(axis.title.y=element_text(size=14, margin=margin(0,7,0,0)),
+        axis.text=element_text(size=14),
+        axis.text.x=element_text(angle=20, margin=margin(0,0,0,0), hjust=1),
+        legend.position="none",
+        strip.text = element_text(size = 14, color= "black"))
+}
+
+#plot for All rows except bottom and salinity
+facet_plot_s2 <- function(data,x,y) {
+  ggplot(data=data, aes(x={{x}}, y={{y}}, fill = region))+
+    geom_boxplot(width=0.4)+
+    facet_wrap(~region, nrow = 1)+
+    scale_fill_manual(values=region_colors)+
+    scale_colour_manual(values=region_colors)+
+    labs(x="", y=ylab)+
+    theme_bw()+
+    theme(axis.title.y=element_text(size=14, margin=margin(0,7,0,0)),
+        axis.text=element_text(size=14),
+        axis.text.x=element_blank(),
+        legend.position="none",
+        strip.text = element_text(size = 14, color= "black"))
+}
+
+#plot salinity where there needs to be a free axis to better enable visualization of data
+facet_plot_s3 <- function(data,x,y) {
+  ggplot(data=data, aes(x={{x}}, y={{y}}, fill = region))+
+    geom_boxplot(width=0.4)+
+    facet_wrap(~region, scales = "free_y", nrow = 1)+
+    scale_fill_manual(values=region_colors)+
+    scale_colour_manual(values=region_colors)+
+    labs(x="", y=ylab)+
+    theme_bw()+
+    theme(axis.title.y=element_text(size=12, margin=margin(0,7,0,0)),
+        axis.text=element_text(size=12),
+        axis.text.x=element_blank(),
+        legend.position="none",
+        strip.text = element_text(size = 12, color= "black"))
+}
+
+```
+
+```{r Figure S1 Water Quality Box Plots, fig.height=9, fig.width = 6.5}
+
+ylab="TDN"
+tdn <- facet_plot_s2(data_final, water_type,tdn_mgN_L)
+
+ylab="TSS"
+tss <- facet_plot_s2(data_final, water_type,tss_mg_L)
+
+ylab="Salinity"
+salinity <- facet_plot_s3(data_final, water_type,sal_psu)
+
+ylab="Alkalinity"
+alkalinity <- facet_plot_s2(data_final, water_type,alk_mgl_caco3)
+
+ylab="pH"
+ph <- facet_plot_s1(data_final, water_type,ph)
+
+ylab="ORP"
+orp <- facet_plot_s1(subset(data_final, orp_mv>0), water_type,orp_mv)
+
+
+#Combine plots
+water_chem_plots_s1 <- egg::ggarrange(tdn,tss,salinity,alkalinity,ph,orp, ncol=2, nrow=3, heights=c(3,3,3),widths=c(3.25,3.25), 
+                                   labels=c("A","B","C","D","E","F"),
+                                   label.args = list(gp=grid::gpar(font=1, fontsize=24), x=unit(0.10,"in"), hjust=0, vjust=2.0))
+
+
+ragg::agg_png("Figures/Fig_S1_Water_Chem_Plots.png", width=6.5, height=9, units="in", res = 300, scaling=1)
+print(water_chem_plots_s1)
+dev.off()
+
+
+
+rm(tdn, alkalinity, ph, orp, tss, salinity, water_chem_plots_s1)
+```
+
+```{r Figure S2 PARAFAC Boxplots, fig.height=9, fig.width = 6.5}
+
+ylab="`%C1"
+c1 <- facet_plot_s2(data_final, water_type,PercC1)
+
+ylab="%C2"
+c2 <- facet_plot_s2(data_final, water_type,PercC2)
+
+ylab="%C3"
+c3 <- facet_plot_s2(data_final, water_type,PercC3)
+
+ylab="%C4"
+c4 <- facet_plot_s2(data_final, water_type,PercC4)
+
+ylab="%C5"
+c5 <- facet_plot_s1(data_final, water_type,PercC5)
+
+
+#Combine plots
+parafac_plots_s2 <- egg::ggarrange(c1,c2,c3,c4,c5, ncol=2, nrow=3, heights=c(3,3,3),widths=c(3.25,3.25), 
+                                   labels=c("A","B","C","D","E"),
+                                   label.args = list(gp=grid::gpar(font=1, fontsize=24), x=unit(0.10,"in"), hjust=0, vjust=2.0))
+
+
+ragg::agg_png("Figures/Fig_S2_PARAFAC_Plots.png", width=6.5, height=9, units="in", res = 300, scaling=1)
+print(parafac_plots_s2)
+dev.off()
+
+rm(c1,c2,c3,c4,c5, parafac_plots_s2)
+```
+
+```{r Figure S4: Molecular Indices Boxplots, fig.height=15, fig.width=10.82}
+
+ylab="Mass"
+label="A"
+mass <- facet_plot_s2(data_final, water_type,Mass)
+
+ylab="C"
+label="B"
+c <- facet_plot_s2(data_final, water_type,C)
+
+ylab="H"
+label="C"
+h <- facet_plot_s2(data_final, water_type,H)
+
+ylab="O"
+label="D"
+o <- facet_plot_s2(data_final, water_type,O)
+
+ylab="N"
+label="E"
+n <- facet_plot_s2(data_final, water_type,N)
+
+ylab="S"
+label="F"
+s <- facet_plot_s2(data_final, water_type,S)
+
+ylab="AImod"
+label="G"
+ai <- facet_plot_s2(data_final, water_type,AImod)
+ai
+
+ylab="DBE"
+label="H"
+dbe <- facet_plot_s2(data_final, water_type,DBE)
+
+ylab="O/C"
+label="J"
+oc <- facet_plot_s1(data_final, water_type,OC)
+
+ylab="H/C"
+label="K"
+hc <- facet_plot_s1(data_final, water_type,HC)
+
+
+#Combine plots
+fticr_plots_s3 <- egg::ggarrange(mass,c,h,o,n,s,ai,dbe,oc,hc, ncol=2, nrow=5, heights=c(3,3,3,3,3),widths=c(5.41,5.41), 
+                                   labels=c("A","B","C","D","E","F","G","H","I","J"),
+                                   label.args = list(gp=grid::gpar(font=1, fontsize=24), x=unit(0.10,"in"), hjust=0, vjust=2.0))
+
+
+ragg::agg_png("Figures/Fig_S4_FTICR_Plots.png", width=6.5, height=9, units="in", res = 300, scaling=0.6)
+print(fticr_plots_s3)
+dev.off()
+
+
+
+rm(mass, c, h, o, n, s, dbe, ai, nosc, hc, oc, ylab, label, ft_plot)
+
+```
+
+```{r Unique Formula By Region}
+
+#Isolate Mid-Atlantic FTICRMS data
+ft_data_atlantic <- ft_data_2 %>%
+  dplyr::filter(data_final$region == 'Mid-Atlantic')%>%
+  t() %>%
+  as.data.frame()%>%
+  dplyr::select(-K024)
+
+#Isolate Great Lakes FTICRMS data
+ft_data_greatlakes <- ft_data_2 %>%
+  dplyr::filter(data_final$region == 'Great Lakes')%>%
+  t() %>%
+  as.data.frame()
+
+#Remove peaks not found in Mid-Atlantic
+ft_mol_atlantic <- ft_mol %>%
+  dplyr::filter(rowSums(ft_data_atlantic) !=0)
+
+#Remove peaks not found in Great Lakes
+ft_mol_greatlakes <- ft_mol %>%
+  dplyr::filter(rowSums(ft_data_greatlakes) !=0)
+
+
+#Create List For Dendrograms
+mol_list <- list("Mid-Atlantic" = ft_mol_atlantic$Mass,
+                 "Great Lakes" = ft_mol_greatlakes$Mass)
+
+# Calculate overlap
+overlap <- calculate.overlap(mol_list)
+
+# Create data frame for shared molecular formulas
+shared_mf <- data.frame(overlap$a3)
+rownames(shared_mf) <- shared_mf$overlap.a3
+
+# Merge shared molecular formulas with ft_data
+shared_mf <- merge(x = shared_mf, y = ft_data, by = 'row.names', all.x = TRUE) %>%
+  column_to_rownames(var = "Row.names") %>%
+  dplyr::select(-c(overlap.a3))
+
+# Calculate the mean intensity contribution of shared molecular formulas
+mean(colSums(shared_mf) / colSums(ft_data))
+
+# Obtain Formula in Mid-Atlantic and Great Lakes Samples
+midatlantic_mf <- data.frame(overlap$a1)%>%
+  mutate(Source='Riverine')%>%
+  rename(Mass = overlap.a1)
+greatlakes_mf <- data.frame(overlap$a2)%>%
+  mutate(Source='Estuarine')%>%
+  rename(Mass = overlap.a2)
+
+# Graph unique formula between Mid-Atlantic and Great Lakes Samples
+vk1 <- full_join(midatlantic_mf,greatlakes_mf, by="Mass", suffix = c('.midatlantic', '.greatlakes'))%>%
+  mutate(Source = case_when(
+    !is.na(Source.midatlantic) & !is.na(Source.greatlakes) ~ 'Both',
+    !is.na(Source.midatlantic) ~ 'Mid-Atlantic',
+    !is.na(Source.greatlakes) ~ 'Great Lakes'))%>%
+  dplyr::select(Mass, Source)%>%
+  left_join(ft_mol, by="Mass")%>%
+  dplyr::filter(Source != "Both")%>%
+  ggplot(aes(x=OC, y=HC))+
+  geom_point(aes(colour=Source), size=1, alpha=0.5)+
+  scale_colour_manual(values = region_colors)+
+  labs(x="O/C", y="H/C")+
+  theme_bw()+
+  theme(panel.grid = element_blank(),
+        axis.text = element_text(size=12),
+        axis.title = element_text(size=12),
+        legend.position = "bottom",
+        legend.title = element_blank(),
+        legend.text = element_text(size=12),
+        legend.direction = "horizontal",
+        legend.margin = margin(t = -0.30, unit = "cm"))+  
+  guides(colour=guide_legend(override.aes = list(size=4)))
+
+
+# Clean up workspace
+rm(ft_data_atlantic, ft_data_greatlakes, ft_mol_atlantic,ft_mol_greatlakes,mol_list,shared_mf,overlap, greatlakes_mf,midatlantic_mf)
+
+```
+
+```{r Unique Formula by Water Type}
+watertype_colors <- c("Riverine"="#A1887F",
+                  "Estuarine" = "#80DEEA")
+
+#Isolate Riverine FTICRMS data
+ft_data_riverine <- ft_data_2 %>%
+  dplyr::filter(data_final$water_type == 'Riverine')%>%
+  t() %>%
+  as.data.frame()
+
+#Isolate Estuarine FTICRMS data
+ft_data_estuarine <- ft_data_2 %>%
+  dplyr::filter(data_final$water_type == 'Estuarine')%>%
+  t() %>%
+  as.data.frame()
+
+#Remove peaks not found in Riverine Samples
+ft_mol_riverine <- ft_mol %>%
+  dplyr::filter(rowSums(ft_data_riverine) !=0)
+
+#Remove peaks not found in Estuarine
+ft_mol_estuarine <- ft_mol %>%
+  dplyr::filter(rowSums(ft_data_estuarine) !=0)
+
+
+#Create List For Dendrograms
+mol_list <- list("Riverine" = ft_mol_riverine$Mass,
+                 "Estuarine" = ft_mol_estuarine$Mass)
+
+overlap <- calculate.overlap(mol_list)
+
+# Create data frame for shared molecular formulas
+shared_mf <- data.frame(overlap$a3)
+rownames(shared_mf) <- shared_mf$overlap.a3
+
+# Merge shared molecular formulas with ft_data
+shared_mf <- merge(x = shared_mf, y = ft_data, by = 'row.names', all.x = TRUE) %>%
+  column_to_rownames(var = "Row.names") %>%
+  dplyr::select(-c(overlap.a3))
+
+# Calculate the mean intensity contribution of shared molecular formulas
+mean(colSums(shared_mf) / colSums(ft_data))
+#Note that this data here suggests that 99.6% of the signal intensity is represented by the shared molecular formula
+
+
+# Obtain Formula in River and Estuarine Samples
+riverine_mf <- data.frame(overlap$a1)%>%
+  mutate(Source='Riverine')%>%
+  rename(Mass = overlap.a1)
+estuarine_mf <- data.frame(overlap$a2)%>%
+  mutate(Source='Estuarine')%>%
+  rename(Mass = overlap.a2)
+
+# Graph unique formula between Riverine and Estuarine Samples
+vk2 <- full_join(riverine_mf,estuarine_mf, by="Mass", suffix = c('.riverine', '.estuarine'))%>%
+  mutate(Source = case_when(
+    !is.na(Source.riverine) & !is.na(Source.estuarine) ~ 'Both',
+    !is.na(Source.riverine) ~ 'Riverine',
+    !is.na(Source.estuarine) ~ 'Estuarine'))%>%
+  dplyr::select(Mass, Source)%>%
+  left_join(ft_mol, by="Mass")%>%
+  dplyr::filter(Source != "Both")%>%
+  ggplot(aes(x=OC, y=HC))+
+  geom_point(aes(colour=Source), size=1, alpha=0.5)+
+  scale_colour_manual(values = watertype_colors)+
+  labs(x="O/C", y="H/C")+
+  theme_bw()+
+  theme(panel.grid = element_blank(),
+        axis.text = element_text(size=12),
+        axis.title = element_text(size=12),
+        legend.position = "bottom",
+        legend.title = element_blank(),
+        legend.text = element_text(size=12),
+        legend.direction = "horizontal",
+        legend.margin = margin(t = -0.30, unit = "cm"))+
+  guides(colour=guide_legend(override.aes = list(size=4)))
+
+
+
+
+rm(ft_data_riverine, ft_data_estuarine, ft_mol_riverine,ft_mol_estuarine, mol_list,shared_mf,overlap, estuarine_mf, riverine_mf)
+
+```
+
+```{r Unique Formula by Water Type within Mid-Atlantic Region}
+
+ft_data_atlantic <- ft_data_2 %>%
+  dplyr::filter(data_final$region == "Mid-Atlantic")%>%
+  t() %>%
+  as.data.frame()
+
+ft_mol_atlantic <- ft_mol %>%
+  dplyr::filter(rowSums(ft_data_atlantic) != 0)
+
+#Isolate Mid-Atlantic Riverine FTICRMS data
+ft_data_atlantic_riverine <- ft_data_2 %>%
+  dplyr::filter(data_final$water_type == 'Riverine' & data_final$region == 'Mid-Atlantic')%>%
+  t() %>%
+  as.data.frame()
+
+#Isolate Mid-Atlantic Estuarine FTICRMS data
+ft_data_atlantic_estuarine <- ft_data_2 %>%
+  dplyr::filter(data_final$water_type == 'Estuarine' & data_final$region == 'Mid-Atlantic')%>%
+  t() %>%
+  as.data.frame()
+
+#Remove peaks not found in Riverine Samples
+ft_mol_atlantic_riverine <- ft_mol %>%
+  dplyr::filter(rowSums(ft_data_atlantic_riverine) !=0)
+
+#Remove peaks not found in Estuarine
+ft_mol_atlantic_estuarine <- ft_mol %>%
+  dplyr::filter(rowSums(ft_data_atlantic_estuarine) !=0)
+
+
+#Create List For Dendrograms
+mol_list <- list("Atlantic Riverine" = ft_mol_atlantic_riverine$Mass,
+                 "Atlantic Estuarine" = ft_mol_atlantic_estuarine$Mass)
+
+# Calculate overlap
+overlap <- calculate.overlap(mol_list)
+
+# Create data frame for shared molecular formulas
+shared_mf <- data.frame(overlap$a3)
+rownames(shared_mf) <- shared_mf$overlap.a3
+
+# Merge shared molecular formulas with ft_data
+shared_mf <- merge(x = shared_mf, y = ft_data, by = 'row.names', all.x = TRUE) %>%
+  column_to_rownames(var = "Row.names") %>%
+  dplyr::select(-c(overlap.a3))
+
+# Calculate the mean intensity contribution of shared molecular formulas
+mean(colSums(shared_mf) / colSums(ft_data))
+#Note that this data here suggests that 99.6% of the signal intensity is represented by the shared molecular formula
+
+
+# Obtain Formula in River and Estuarine Samples
+riverine_mf <- data.frame(overlap$a1)%>%
+  mutate(Source='Riverine')%>%
+  rename(Mass = overlap.a1)
+estuarine_mf <- data.frame(overlap$a2)%>%
+  mutate(Source='Estuarine')%>%
+  rename(Mass = overlap.a2)
+
+# Graph unique formula between Riverine and Estuarine Samples
+vk3 <- full_join(riverine_mf,estuarine_mf, by="Mass", suffix = c('.riverine', '.estuarine'))%>%
+  mutate(Source = case_when(
+    !is.na(Source.riverine) & !is.na(Source.estuarine) ~ 'Both',
+    !is.na(Source.riverine) ~ 'Riverine',
+    !is.na(Source.estuarine) ~ 'Estuarine'))%>%
+  dplyr::select(Mass, Source)%>%
+  left_join(ft_mol, by="Mass")%>%
+  dplyr::filter(Source != "Both")%>%
+  ggplot(aes(x=OC, y=HC))+
+  geom_point(aes(colour=Source), size=1, alpha=0.5)+
+  scale_colour_manual(values = watertype_colors)+
+  labs(x="O/C", y="H/C")+
+  theme_bw()+
+  theme(panel.grid = element_blank(),
+        axis.text = element_text(size=12),
+        axis.title = element_text(size=12),
+        legend.position = "bottom",
+        legend.title = element_blank(),
+        legend.text = element_text(size=12),
+        legend.direction = "horizontal",
+        legend.margin = margin(t = -0.30, unit = "cm"))+
+guides(colour=guide_legend(override.aes = list(size=4)))
+
+
+
+rm(ft_data_atlantic, ft_mol_atlantic, ft_data_atlantic_riverine, ft_data_atlantic_estuarine, ft_mol_atlantic_riverine,ft_mol_atlantic_estuarine, mol_list,shared_mf,overlap, estuarine_mf, riverine_mf)
+
+
+```
+
+```{r, Unique Formula by Water Type within Great Lakes region}
+
+ft_data_greatlakes <- ft_data_2 %>%
+  dplyr::filter(data_final$region == "Great Lakes")%>%
+  t() %>%
+  as.data.frame()
+
+ft_mol_greatlakes <- ft_mol %>%
+  dplyr::filter(rowSums(ft_data_greatlakes) != 0)
+
+#Isolate Great Lakes Riverine FTICRMS data
+ft_data_greatlakes_riverine <- ft_data_2 %>%
+  dplyr::filter(data_final$water_type == 'Riverine' & data_final$region == 'Great Lakes')%>%
+  t() %>%
+  as.data.frame()
+
+#Isolate Great Lakes Estuarine FTICRMS data
+ft_data_greatlakes_estuarine <- ft_data_2 %>%
+  dplyr::filter(data_final$water_type == 'Estuarine' & data_final$region == 'Great Lakes')%>%
+  t() %>%
+  as.data.frame()
+
+#Remove peaks not found in Riverine Samples
+ft_mol_greatlakes_riverine <- ft_mol %>%
+  dplyr::filter(rowSums(ft_data_greatlakes_riverine) !=0)
+
+#Remove peaks not found in Estuarine
+ft_mol_greatlakes_estuarine <- ft_mol %>%
+  dplyr::filter(rowSums(ft_data_greatlakes_estuarine) !=0)
+
+
+#Create List For Dendrograms
+mol_list <- list("Great Lakes Riverine" = ft_mol_greatlakes_riverine$Mass,
+                 "Great Lakes Estuarine" = ft_mol_greatlakes_estuarine$Mass)
+
+
+# Calculate overlap
+overlap <- calculate.overlap(mol_list)
+
+# Create data frame for shared molecular formulas
+shared_mf <- data.frame(overlap$a3)
+rownames(shared_mf) <- shared_mf$overlap.a3
+
+# Merge shared molecular formulas with ft_data
+shared_mf <- merge(x = shared_mf, y = ft_data, by = 'row.names', all.x = TRUE) %>%
+  column_to_rownames(var = "Row.names") %>%
+  dplyr::select(-c(overlap.a3))
+
+# Calculate the mean intensity contribution of shared molecular formulas
+mean(colSums(shared_mf) / colSums(ft_data))
+#Note that this data here suggests that 99.6% of the signal intensity is represented by the shared molecular formula
+
+
+# Obtain Formula in River and Estuarine Samples
+riverine_mf <- data.frame(overlap$a1)%>%
+  mutate(Source='Riverine')%>%
+  rename(Mass = overlap.a1)
+estuarine_mf <- data.frame(overlap$a2)%>%
+  mutate(Source='Estuarine')%>%
+  rename(Mass = overlap.a2)
+
+# Graph unique formula between Riverine and Estuarine Samples
+vk4 <-  full_join(riverine_mf,estuarine_mf, by="Mass", suffix = c('.riverine', '.estuarine'))%>%
+  mutate(Source = case_when(
+    !is.na(Source.riverine) & !is.na(Source.estuarine) ~ 'Both',
+    !is.na(Source.riverine) ~ 'Riverine',
+    !is.na(Source.estuarine) ~ 'Estuarine'))%>%
+  dplyr::select(Mass, Source)%>%
+  left_join(ft_mol, by="Mass")%>%
+  dplyr::filter(Source != "Both")%>%
+  ggplot(aes(x=OC, y=HC))+
+  geom_point(aes(colour=Source), size = 1, alpha=0.5) +
+  scale_colour_manual(values = watertype_colors)+
+  labs(x="O/C", y="H/C")+
+  theme_bw()+
+  theme(panel.grid = element_blank(),
+        axis.text = element_text(size=12),
+        axis.title = element_text(size=12),
+        legend.position = "bottom",
+        legend.title = element_blank(),
+        legend.text = element_text(size=12),
+        legend.direction = "horizontal",
+        legend.margin = margin(t = -0.30, unit = "cm"))+
+  guides(colour=guide_legend(override.aes = list(size=4)))
+
+
+rm(ft_data_greatlakes, ft_mol_greatlakes, ft_data_greatlakes_riverine, ft_data_greatlakes_estuarine, ft_mol_greatlakes_riverine,ft_mol_greatlakes_estuarine,mol_list,shared_mf,overlap, estuarine_mf, riverine_mf)
+
+
+```
+
+```{r Figure S3 Unique Molecular Formula Panel, fig.height=6.5, fig.width=6.5}
+
+#Combine plots
+vk_plots <- egg::ggarrange(vk1, vk2, vk3, vk4, ncol=2, heights=c(3.25, 3.25), widths=c(3.25,3.25),
+                           labels = c("A","B","C","D"),
+                           label.args = list(gp=grid::gpar(font=1, fontsize=20), x=unit(0.10, "in"), hjust=0, vjust=2.0)) 
+
+# Print Figure
+ragg::agg_png("Figures/Fig_S3_vk_Plots.png", width=6.5, height=6.5, units="in", res = 300, scaling=1)
+print(vk_plots)
+dev.off()
+
+# Clean Up Workspace
+rm(vk1,vk2,vk3,vk4, vk_plots)
+
+```
+
