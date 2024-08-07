@@ -1,6 +1,6 @@
 # ec1_surfacewaterDOM_paper
 
-To utilize this code download the following files from Pennington et al., 2023 (https://doi.org/10.1038/s41597-023-02548-7) and place them into a folder called 'Data'
+To use this code download the following files from Pennington et al., 2023 (https://doi.org/10.1038/s41597-023-02548-7) and place them into a folder called 'Data'
 
 ec1_metadata_collectionlevel.csv <br />
 ec1_water_alkalinity_L2.csv <br />
