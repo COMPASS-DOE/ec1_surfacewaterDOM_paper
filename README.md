@@ -1,5 +1,11 @@
 # ec1_surfacewaterDOM_paper
 
+This repository is associated with a manuscript by Roebuck et al. to be submitted for review. 
+
+This manuscript utilizes data collected as a part of the EXCHANGE campaign 1 to understand changes is dissolved organic matter composition across the mid-Atlantic and Great Lakes.
+
+All codes to reprodude figures and statistics for this manuscript can be found in EXCHANGE_Manuscript_Analyses.Rmd
+
 To use this code download, the following files from Pennington et al., 2023 (https://doi.org/10.1038/s41597-023-02548-7) and place them into a folder called 'Data'
 
 ec1_metadata_collectionlevel.csv <br />
