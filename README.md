@@ -2,7 +2,7 @@
 
 This repository is associated with a manuscript by Roebuck et al. to be submitted for review. 
 
-This manuscript utilizes data collected as a part of the EXCHANGE campaign 1 to understand changes is dissolved organic matter composition across the mid-Atlantic and Great Lakes.
+This manuscript utilizes data collected as a part of the EXCHANGE campaign 1 to understand changes is surface water dissolved organic matter composition across the mid-Atlantic and Great Lakes coastal terrestrial to aquatic interfaces.
 
 All codes to reprodude figures and statistics for this manuscript can be found in EXCHANGE_Manuscript_Analyses.Rmd
 
