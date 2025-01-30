@@ -53,3 +53,4 @@ rsconnect/
 
 # Paper
 /Paper
+.DS_Store
