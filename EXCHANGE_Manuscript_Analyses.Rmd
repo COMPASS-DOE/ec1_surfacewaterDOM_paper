@@ -32,8 +32,11 @@ pacman::p_load(cowsay,
                biotools,
                MASS,
                ragg,
-               magick
+               magick,
+               remotes
 )
+
+remotes::install_github("gavinsimpson/ggvegan")
 
 ```
 
@@ -138,8 +141,8 @@ rm(data, metadata, parafac, peak_picks, spectral_indices)
 
 ```{r Read in FTICR-MS data}
 #Read in FTICR data
-ft_mol <- read.csv("Data/EC1_Water_FTICR_meta_L2_20221221.csv", header=TRUE, sep=",")
-ft_data <- read.csv("Data/EC1_Water_FTICR_L2_20221221.csv", header=TRUE, sep=",")
+ft_mol <- read.csv("Data/ec1_water_fticrms_L2.csv", header=TRUE, sep=",")
+ft_data <- read.csv("Data/ec1_water_fticrms_meta_L2.csv", header=TRUE, sep=",")
 
 # Merge FTICR data
 ft_all <- merge(x=ft_mol, y=ft_data, by="formula")%>%
@@ -273,7 +276,7 @@ data_final %>%
             doc_sd = sd(doc_mgC_L))
 
 
-rm(thresholds, aov.doc, means_doc)
+rm(thresholds, means_doc)
 
 ```
 
@@ -313,7 +316,6 @@ data_final %>%
   summarise(doc_mean = mean(SUVA254),
             doc_sd = sd(SUVA254))
 
-rm(aov.suva)
 
 ```
 
@@ -507,7 +509,7 @@ ft_data_nmds <- ft_data_2 %>%
 ft_data_nmds <- decostand(ft_data_nmds, method="hellinger")
 set.seed(1988)
 nmds <- metaMDS(ft_data_nmds, distance = "bray", autotransform = F, na.rm=TRUE) #autotransform=F since we transformed data in previous step
-nmds.fortify<- fortify(nmds)
+nmds.fortify<- ggvegan::fortify(nmds)
 
 
 #Envirofit on FTICRMS and Environmental Data
@@ -680,7 +682,6 @@ shapiro.test(aov.cho$residuals)
 # Run anova statistics using type II sum of squares
 Anova(aov.cho, type='II')
 
-rm(aov.cho)
 
 
 ```
@@ -711,7 +712,6 @@ shapiro.test(aov.chon$residuals)
 # Run anova statistics using type II sum of squares
 Anova(aov.chon, type='II')
 
-rm(aov.chon)
 
 
 ```
@@ -744,8 +744,38 @@ Anova(aov.CHOS, type='II')
 #Posthoc analysis
 TukeyHSD(aov.CHOS)
 
-rm(aov.CHOS)
 
+
+```
+## Table of Anovas for Reviewer 1
+
+```{r ANOVA table}
+extract_anova_results <- function(anova_result, label) {
+  
+  summary_list <- summary(anova_result)
+  summary_table <- do.call(rbind, lapply(summary_list, function(x) as.data.frame(x)))
+  
+  # Add rownames to the table as an "Effect" column so you can preserve the names
+  summary_table <- tibble::rownames_to_column(summary_table, var = "Effect")
+  
+  # Add a column for the model label
+  summary_table$Model <- label
+  
+  return(summary_table)
+}
+
+doc_table <- extract_anova_results(aov.doc, "DOC")
+suva_table <- extract_anova_results(aov.suva, "SUVA")
+cho_table <- extract_anova_results(aov.cho, "CHO")
+chon_table <- extract_anova_results(aov.chon, "CHON")
+chos_table <- extract_anova_results(aov.CHOS, "CHOS")
+
+table_total <- rbind(doc_table, suva_table, cho_table, chon_table, chos_table)
+
+table_clean <- table_total %>%
+  dplyr::select(Model, everything())
+
+write_csv(table_clean, "Data/ANOVA_results.csv")
 
 ```
 
