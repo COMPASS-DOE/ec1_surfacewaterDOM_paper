@@ -1,0 +1,10 @@
+File_Name,File_Description,Standard,Start_Date,End_Date,Missing_Value_Codes,Header_Orientation
+flmd.csv,File-level metadata associated with dataset,ESS-DIVE File-Level Metadata Reporting Format 1.0,-9999,-9999,NA; -9999,Horizontal
+EC1_Water_CDOM_SpectralIndices_20221110.csv,,,,,,Horizontal
+CO2Sys_v2.3_Roebuck et al.xls,,,,,,Horizontal
+EC1_Water_CDOM_DOCnormalizedpeakpicks_20221110_dd.csv,,,,,,Horizontal
+EC1_Water_CDOM_DOCnormalizedpeakpicks_20221110.csv,,,,,,Horizontal
+EC1_Water_CDOM_PARAFAC_L2_20221107.xls,,,,,,Horizontal
+EC1_Water_CDOM_RSUpeakpicks_20221110_dd.csv,,,,,,Horizontal
+EC1_Water_CDOM_RSUpeakpicks_20221110.csv,,,,,,Horizontal
+EC1_Water_CDOM_SpectralIndices_20221110_dd.csv,,,,,,Horizontal
