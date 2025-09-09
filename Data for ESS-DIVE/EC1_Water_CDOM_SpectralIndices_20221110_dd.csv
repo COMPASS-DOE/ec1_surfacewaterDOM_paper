@@ -1,0 +1,15 @@
+column_or_row_name,definition,unit,column_or_row_long_name,data_type,"missing_value_code
+",notes
+Sample_ID,,NA,,text,NA,
+Sample_Description,,,,text,NA,
+SUVA254,,,,numeric,NA,
+S275_295,,,,numeric,NA,
+S275_295_r2,,,,numeric,NA,
+S350_400,,,,numeric,NA,
+S350_400_r2,,,,numeric,NA,
+Sr,,,,numeric,NA,
+E2toE3,,,,numeric,NA,
+FI,,,,numeric,NA,
+HIX,,,,numeric,NA,
+FRESH,,,,numeric,NA,
+BIX,,,,numeric,NA,

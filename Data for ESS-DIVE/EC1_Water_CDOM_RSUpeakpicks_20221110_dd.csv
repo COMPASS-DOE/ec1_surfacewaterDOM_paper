@@ -1,0 +1,16 @@
+column_or_row_name,definition,unit,column_or_row_long_name,data_type,"missing_value_code
+",notes
+Sample_ID,,NA,,text,NA,
+Abs_250nm,,,,numeric,NA,
+Abs_254nm,,,,numeric,NA,
+Abs_280nm,,,,numeric,NA,
+Abs_350nm,,,,numeric,NA,
+Abs_365nm,,,,numeric,NA,
+Abs_412nm,,,,numeric,NA,
+Abs_440nm,,,,numeric,NA,
+C_RSU,,,,numeric,NA,
+A_RSU,,,,numeric,NA,
+T_RSU,,,,numeric,NA,
+B_RSU,,,,numeric,NA,
+M_RSU,,,,numeric,NA,
+FDOM_RSU,,,,numeric,NA,
