@@ -1,7 +1,7 @@
 File_Name,File_Description,Standard,Start_Date,End_Date,Missing_Value_Codes,Header_Orientation
 flmd.csv,File-level metadata associated with dataset,ESS-DIVE File-Level Metadata Reporting Format 1.0,-9999,-9999,NA; -9999,Horizontal
 ec1_water_cdom_spectralindices.csv,Spectral indices output from matlab script for absorbance and fluorescence datasets from https://doi.org/10.15485/1960313.,,,,,Horizontal
-Roebuck et al_CO2sys calculations.xlsx,"CO2sys calculations of pH changes under varying temperatures and a constant salinity, DIC, and alkalinity concentration",,,,,Horizontal
+Roebuck_et_al_CO2sys_calculations.csv,"CO2sys calculations of pH changes under varying temperatures and a constant salinity, DIC, and alkalinity concentration",,,,,Horizontal
 ec1_water_cdom_docnormalizedpeakpicks_dd.csv,,,,,,Horizontal
 ec1_water_cdom_docnormalizedpeakpicks.csv,"Selection of commonly reported absorbance and fluorescence peaks normalized to dissolved organic carbon concentrations using dissolved organic carbon, absorbance and fluorescence datasets from https://doi.org/10.15485/1960313.",,,,NA; -9999,Horizontal
 ec1_water_cdom_parafac_L2.xls,Parallel factor output from the EC1 fluorescence datasets in https://doi.org/10.15485/1960313. Parallel factor analysis (PARAFAC) was performed and a 5-component model was validated.,,,,NA; -9999,Horizontal
