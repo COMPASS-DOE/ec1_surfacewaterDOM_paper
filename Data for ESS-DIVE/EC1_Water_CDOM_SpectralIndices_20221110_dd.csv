@@ -1,15 +1,15 @@
 column_or_row_name,definition,unit,column_or_row_long_name,data_type,"missing_value_code
 ",notes
-Sample_ID,,NA,,text,NA,
-Sample_Description,,,,text,NA,
-SUVA254,The dissolved oragaanic carbon normalized absorbance at 254 nanometers. Can be related to dissolved organic matter aromaticity. Weishaar et al. 2003; doi: 10.1021/es030360x.,liters per milligram meter,,numeric,NA,
-S275_295,Spectral slope from 275-295 nanometers. Higher generally related with lower molecular weight dissolved organic matter (DOM). Helms et al. 2008; doi: 10.4319/lo.2008.53.3.0955.,one per nanometer,,numeric,NA,
-S275_295_r2,R-squared for the spectral slope from 275 to 295 nanometers.,NA,,numeric,NA,
-S350_400,Spectral slope from 350-400 nanometers. Higher values generally indicated more aromatic; higher molecular weight dissolved organic matter (DOM). Helms et al. 2008; doi: 10.4319/lo.2008.53.3.0955.,one per nanometer,,numeric,NA,
-S350_400_r2,R-squared for the spectral slope from 350 to 400 nanometers.,NA,,numeric,NA,
-Sr,Spectral slope ratio. Defined as the ratio of S275_295/S350_400. Related to dissolved organic matter molecular weight. Helms et al. 2008;  doi: 10.4319/lo.2008.53.3.0955.,NA,,numeric,NA,
+Sample_ID,Sample identification code,NA,,text,NA,
+Sample_Description,Description of sample,NA,,text,NA,
+SUVA254,The dissolved oragaanic carbon normalized absorbance at 254 nanometers,liters per milligram meter,,numeric,NA,Can be related to dissolved organic matter aromaticity. Weishaar et al. 2003; doi: 10.1021/es030360x.
+S275_295,Spectral slope from 275-295 nanometers,one per nanometer,,numeric,NA,Higher generally related with lower molecular weight dissolved organic matter (DOM). Helms et al. 2008; doi: 10.4319/lo.2008.53.3.0955.
+S275_295_r2,R-squared for the spectral slope from 275 to 295 nanometers,NA,,numeric,NA,
+S350_400,Spectral slope from 350-400 nanometers,one per nanometer,,numeric,NA,Higher values generally indicated more aromatic; higher molecular weight dissolved organic matter (DOM). Helms et al. 2008; doi: 10.4319/lo.2008.53.3.0955.
+S350_400_r2,R-squared for the spectral slope from 350 to 400 nanometers,NA,,numeric,NA,
+Sr,Spectral slope ratio. Defined as the ratio of S275_295/S350_400,NA,,numeric,NA,Related to dissolved organic matter molecular weight. Helms et al. 2008;  doi: 10.4319/lo.2008.53.3.0955.
 E2toE3,The ratio of absorption at 250 to 365 nanometers.,NA,,numeric,NA,
-FI,Fluorescence Index. Related to contribution of microbial (high) versus terrestrial sources (low). McKnight et al. 2001; doi: 10.4319/lo.2001.46.1.0038.,NA,,numeric,NA,
-HIX,Humification Index. Related to the degree of humification. Ohno 2002; doi: 10.1021/es0155276.,NA,,numeric,NA,
-FRESH,Freshness Indices. Related to freshly produced dissolved organic matter. Parlanti et. al. 2000; doi: 10.1016/S0146-6380(00)00124-8.,NA,,numeric,NA,
-BIX,Biological Index. Related to autotrophic activity (>1 value indicates recently generated dissolved organic matter (DOM)). Huguet et al. 2009; doi: 10.1016/j.orggeochem.2009.03.002.,NA,,numeric,NA,
+FI,Fluorescence Index,NA,,numeric,NA,Related to contribution of microbial (high) versus terrestrial sources (low). McKnight et al. 2001; doi: 10.4319/lo.2001.46.1.0038.
+HIX,Humification Index,NA,,numeric,NA,Related to the degree of humification. Ohno 2002; doi: 10.1021/es0155276.
+FRESH,Freshness Indices,NA,,numeric,NA,Related to freshly produced dissolved organic matter. Parlanti et. al. 2000; doi: 10.1016/S0146-6380(00)00124-8.
+BIX,Biological Index,NA,,numeric,NA,Related to autotrophic activity (>1 value indicates recently generated dissolved organic matter (DOM)). Huguet et al. 2009; doi: 10.1016/j.orggeochem.2009.03.002.

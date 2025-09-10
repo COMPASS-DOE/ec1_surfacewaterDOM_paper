@@ -1,10 +1,10 @@
 File_Name,File_Description,Standard,Start_Date,End_Date,Missing_Value_Codes,Header_Orientation
-flmd.csv,File-level metadata associated with dataset,ESS-DIVE File-Level Metadata Reporting Format 1.0,-9999,-9999,NA; -9999,Horizontal
-EC1_Water_CDOM_SpectralIndices_20221110.csv,Spectral indices output from matlab script for absorbance and fluorescence datasets from https://doi.org/10.15485/1960313.,,,,,Horizontal
-CO2Sys_v2.3_Roebuck et al.xls,NICK TO FILL IN,,,,,Horizontal
-EC1_Water_CDOM_DOCnormalizedpeakpicks_20221110_dd.csv,,,,,,Horizontal
-EC1_Water_CDOM_DOCnormalizedpeakpicks_20221110.csv,"Selection of commonly reported absorbance and fluorescence peaks normalized to dissolved organic carbon concentrations using dissolved organic carbon, absorbance and fluorescence datasets from https://doi.org/10.15485/1960313.",,,,NA; -9999,Horizontal
-EC1_Water_CDOM_PARAFAC_L2_20221107.xls,Parallel factor output from the EC1 fluorescence datasets in https://doi.org/10.15485/1960313. Parallel factor analysis (PARAFAC) was performed and a 5-component model was validated.,,,,NA; -9999,Horizontal
-EC1_Water_CDOM_RSUpeakpicks_20221110_dd.csv,,,,,,Horizontal
-EC1_Water_CDOM_RSUpeakpicks_20221110.csv,Selection of commonly reported absorbance and fluorescence peaks from absorbance and fluorescence datasets from https://doi.org/10.15485/1960313.,,,,NA; -9999,Horizontal
-EC1_Water_CDOM_SpectralIndices_20221110_dd.csv,,,,,,Horizontal
+flmd.csv,File-level metadata associated with dataset,ESS-DIVE File-Level Metadata Reporting Format 1.0,-9999,-9999,NA,Horizontal
+EC1_Water_CDOM_SpectralIndices_20221110.csv,Spectral indices output from matlab script for absorbance and fluorescence datasets,,2021-09-01,2021-11-31,NA,Horizontal
+CO2Sys_v2.3_Roebuck et al.xls,NICK TO FILL IN,,2021-09-01,2021-11-31,NA,Horizontal
+EC1_Water_CDOM_DOCnormalizedpeakpicks_20221110_dd.csv,"Data description file defining column description, units, etc.",,2021-09-01,2021-11-31,NA,Horizontal
+EC1_Water_CDOM_DOCnormalizedpeakpicks_20221110.csv,Selection of commonly reported absorbance and fluorescence peaks normalized to dissolved organic carbon concentrations,,2021-09-01,2021-11-31,NA,Horizontal
+EC1_Water_CDOM_PARAFAC_L2_20221107.xls,Parallel factor output from the EC1 fluorescence datasets,,2021-09-01,2021-11-31,NA,Horizontal
+EC1_Water_CDOM_RSUpeakpicks_20221110_dd.csv,"Data description file defining column description, units, etc.",,2021-09-01,2021-11-31,NA,Horizontal
+EC1_Water_CDOM_RSUpeakpicks_20221110.csv,Selection of commonly reported absorbance and fluorescence peaks,,2021-09-01,2021-11-31,NA,Horizontal
+EC1_Water_CDOM_SpectralIndices_20221110_dd.csv,"Data description file defining column description, units, etc.",,2021-09-01,2021-11-31,NA,Horizontal
