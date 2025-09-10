@@ -1,7 +1,6 @@
 column_or_row_name,definition,unit,column_or_row_long_name,data_type,"missing_value_code
 ",notes
-Sample_ID,Sample identification code,NA,,text,NA,
-Sample_Description,Description of sample,NA,,text,NA,
+kit_id,Sample identification code,NA,,text,NA,
 SUVA254,The dissolved oragaanic carbon normalized absorbance at 254 nanometers,liters per milligram meter,,numeric,NA,Can be related to dissolved organic matter aromaticity. Weishaar et al. 2003; doi: 10.1021/es030360x.
 S275_295,Spectral slope from 275-295 nanometers,one per nanometer,,numeric,NA,Higher generally related with lower molecular weight dissolved organic matter (DOM). Helms et al. 2008; doi: 10.4319/lo.2008.53.3.0955.
 S275_295_r2,R-squared for the spectral slope from 275 to 295 nanometers,NA,,numeric,NA,

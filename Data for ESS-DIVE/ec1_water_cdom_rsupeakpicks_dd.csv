@@ -1,6 +1,6 @@
 column_or_row_name,definition,unit,column_or_row_long_name,data_type,"missing_value_code
 ",notes
-Sample_ID,Sample identification code,NA,,text,NA,
+kit_id,Sample identification code,NA,,text,NA,
 Abs_*nm,Absorbance at a given nanometer,absorbance units,,numeric,NA,The asterisk indicates the nanometer (250; 254; 280; 350; 365; 412; 440).
 C_RSU,Fluorescence C Peak,raman scatter units,,numeric,NA,Maximum intensity between Emission of 400-460 nanometers at an Excitation between 320-360 nanometers. Wunsch et al. 2019; doi: 10.1039/C8AY02422G.
 A_RSU,Fluorescence A Peak,raman scatter units,,numeric,NA,Maximum intensity between Emission of 400-460 nanometers at an Excitation of 260 nanometers. Wunsch et al. 2019; doi: 10.1039/C8AY02422G.
