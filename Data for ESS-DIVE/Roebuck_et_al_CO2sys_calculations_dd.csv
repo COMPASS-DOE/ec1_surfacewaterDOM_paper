@@ -2,6 +2,6 @@ column_or_row_name,definition,unit,column_or_row_long_name,data_type,"missing_va
 ",notes
 salinity_psu,Salinity,PSU,,text,NA,
 temperature_degC,Temperature,degreesC,,numeric,NA,
-TA_mmol_per_kgSW,,mmol/kg seawater,,numeric,NA,
-TCO2_mmol_per_kgSW,,mmol/kg seawater,,numeric,NA,
+TA_mmol_per_kgSW,total alkalinity ,mmol/kg seawater,,numeric,NA,
+TCO2_mmol_per_kgSW,Dissolved inorganic carbon,mmol/kg seawater,,numeric,NA,
 pH,pH,(unitless),,numeric,NA,
