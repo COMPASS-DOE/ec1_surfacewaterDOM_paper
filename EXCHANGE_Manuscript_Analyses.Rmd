@@ -482,7 +482,7 @@ Manova(manova.parafac, type='II')
 # Post hoc analysis
 mvpaircomp(manova.parafac, "water_type", test="Wilks", adjust="bonferroni")
 
-
+manova.parafac
 
 rm(manova.parafac)
 ```
@@ -955,6 +955,42 @@ data_final%>%
 
 ```
 
+## Reviewer 2 DOC vs Salinity Figure
+
+```{r R2 figure}
+
+doc_v_sal <-
+  ggplot()+
+    geom_point(data=data_final, aes(x=sal_psu, y=doc_mgC_L, color = region))+
+    scale_color_manual(values=region_colors)+
+    labs(x="Salinity (PSU)", y="DOC mgC/L")+
+    theme_bw()+
+    theme(axis.title.y=element_text(size=14, margin=margin(0,7,0,0)),
+        axis.text=element_text(size=14),
+        axis.text.x=element_text(angle=20, margin=margin(0,0,0,0), hjust=1),
+        legend.position="bottom",
+        strip.text = element_text(size = 14, color= "black"))
+
+ragg::agg_png("Figures/Fig_S5_DOC_v_Sal.png", width=6.5, height=6.5, units="in", res = 300, scaling=1)
+print(doc_v_sal)
+dev.off()
+```
+```{r R2 figure}
+
+suva_v_sal <-
+  ggplot()+
+    geom_point(data=data_final, aes(x=sal_psu, y=SUVA254, color = region))+
+    scale_color_manual(values=region_colors)+
+    labs(x="Salinity (PSU)", y="SUVA 254")+
+    theme_bw()+
+    theme(axis.title.y=element_text(size=14, margin=margin(0,7,0,0)),
+        axis.text=element_text(size=14),
+        axis.text.x=element_text(angle=20, margin=margin(0,0,0,0), hjust=1),
+        legend.position="bottom",
+        strip.text = element_text(size = 14, color= "black"))
+
+suva_v_sal
+```
 
 
 ## *Supporting Information*
